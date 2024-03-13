@@ -1,18 +1,18 @@
 # Data fetching patterns in React application
 
-Today, most of the applications can send hundreds of requests for a single page. For example, my twitter home page send around 300 requests, and Amazon product details page sends around 600 requests. Some of them are for static assets (JavaScript, CSS, font files,icons, etc.),  there are still around 100 requests for async data fetching - either for timelines, friends or product recommendations, as well as analytics events. That’s quite a lot.
+Today, most applications can send hundreds of requests for a single page. For example, my Twitter home page sends around 300 requests, and an Amazon product details page sends around 600 requests. Some of them are for static assets (JavaScript, CSS, font files, icons, etc.), but there are still around 100 requests for async data fetching - either for timelines, friends, or product recommendations, as well as analytics events. That’s quite a lot.
 
-Data fetching is a critical part of any web application, not only because the nature of the async programming can be tricky and not reliable 100%, but also there are too many not-obvious-cases to consider of under the hood. In this article, I would like to discuss a few common problems and patterns you should consider when it comes to get data from the server side.
+Data fetching is a critical part of any web application, not only because the nature of async programming can be tricky and not reliable 100%, but also there are too many not-obvious cases to consider under the hood. In this article, I would like to discuss a few common problems and patterns you should consider when it comes to getting data from the server side.
 
 I would like to discuss the traditional code splitting techniques, as well as parallel requests when possible by restructuring your component hierarchy, and then talk about Static Site Generation and the new Server-Side Rendering (with React Server Component), and how to use these techniques together to achieve a better user experience.
 
-I think the best way to talk about these concepts is through a concrete example, but I also don't want to make it too tedious and complicated to just set up the context. So I’ll start with something simple and make it slightly more realistic gradually. Also I don’t want to bore you with too many code snippets, especially for the styling part (I’m using tailwindcss for the UI, and if you have used it before, you know how long the code snippet could be in a React component. If you want to see the whole details, I have hosted them in this repo, and this one for the server side rendering) 
+I think the best way to talk about these concepts is through a concrete example, but I also don't want to make it too tedious and complicated just to set up the context. So I’ll start with something simple and make it slightly more realistic gradually. Also, I don’t want to bore you with too many code snippets, especially for the styling part (I’m using tailwindcss for the UI, and if you have used it before, you know how long the code snippet could be in a React component. If you want to see the whole details, I have hosted them in this repo, and this one for the server side rendering)
 
-Alright, let’s dive into the example we’re going to use through the article, a `Profile` page.
+Alright, let’s dive into the example we’re going to use throughout the article, a `Profile` page.
 
-## Profile page
+## Introducing the application
 
-Let’s say we’re building a single-page application, we’ll be working on the Profile screen of the application. To begin with, on `Profile` we’ll show the user’s brief (including name, avatar and a short description), and then we also want to show their connections (similar to followers on Twitter or LinkedIn connections). 
+Let’s say we’re building a single-page application; we’ll be working on the Profile screen of the application. To begin with, on `Profile` we’ll show the user’s brief (including name, avatar, and a short description), and then we also want to show their connections (similar to followers on Twitter or LinkedIn connections).
 
 ![Profile screen](images/user-brief-and-friends.png)
 
@@ -31,11 +31,11 @@ The data are from two separate API calls, the user brief API `/users/<id>` retur
 }
 ```
 
-The friend API  `/users/<id>/friends` endpoint returns a list of friends of a given user, each list item in the response is the same as the above user data. The reason we have two endpoints instead of returning a `friends` section of the user API is that there are cases where one could have too many friends (say 1,000), which will make it less flexible to paginate (as well as we want the response to be small) compared to the separate endpoints.
+The friend API `/users/<id>/friends` endpoint returns a list of friends for a given user, each list item in the response is the same as the above user data. The reason we have two endpoints instead of returning a `friends` section of the user API is that there are cases where one could have too many friends (say 1,000), which will make it less flexible to paginate (as well as we want the response to be small) compared to the separate endpoints.
 
 ## Implement the Profile component
 
-Now let’s create the `Profile` component, make a request and render the result. The *standard* way of doing it in React is:
+Now let’s create the `Profile` component, make a request, and render the result. The *standard* way of doing it in React is:
 
 ```jsx
 const Profile = ({ id }: { id: string }) => {
@@ -71,9 +71,9 @@ const Profile = ({ id }: { id: string }) => {
 };
 ```
 
-**explain the code a bit**
+For the `Profile` component, we initiate states for loading, errors, and user data. Using `useEffect`, we fetch user data based on `id`, toggling loading status and handling errors accordingly. Upon successful data retrieval, we update the user state, else display a loading indicator.
 
-The `get` function is simply a wrapper of the native `fetch` API, it throws an error when `response.ok` isn’t presenting:
+The `get` function simplifies fetching data from a specific endpoint by appending the endpoint to a predefined base URL. It checks the response's success status and either returns the parsed JSON data or throws an error for unsuccessful requests, streamlining error handling and data retrieval in our application.
 
 ```jsx
 const baseurl = "https://icodeit.com.au/api/v2";
@@ -89,23 +89,25 @@ async function get<T>(url: string): Promise<T> {
 }
 ```
 
-React will try to render the component initially, but as the data `user` isn’t available, it returns  “loading…” in a `div` . Then the `useEffect` is invoked and the request is kicked off. Once at some point the response returns, React re-renders the `Profile` component with `user` fulfilled, so you can now see the user section with name, avatar and title.
+React will try to render the component initially, but as the data `user` isn’t available, it returns "loading..." in a `div`. Then the `useEffect` is invoked, and the request is kicked off. Once at some point, the response returns, React re-renders the `Profile` component with `user` fulfilled, so you can now see the user section with name, avatar, and title.
 
-If we visualise the timeline of the above code, you will see the following sequence. The browser firstly download the HTML page, and then when it encounters script tag and style tag, it might stop and download these files, and then parse them to form the final page. Note that this is a relatively complicated process, and I’m oversimplified here, but the basic idea of the sequence is correct. 
+If we visualize the timeline of the above code, you will see the following sequence. The browser firstly downloads the HTML page, and then when it encounters script tags and style tags, it might stop and download these files, and then parse them to form the final page. Note that this is a relatively complicated process, and I’m oversimplifying here, but the basic idea of the sequence is correct.
 
-So React can start to render only when the JS are parsed and executed, and then it finds the `useEffect` for data fetching, it has to wait until the data is available for a re-render. 
+So React can start to render only when the JS are parsed and executed, and then it finds the `useEffect` for data fetching; it has to wait until the data is available for a re-render.
 
 ![Fetching user data](images/timeline-1-1-one-request.png)
 
-Now in the browser we can see a “loading…” when the application starts and then the user brief section when data is loaded.
+Now in the browser, we can see a "loading..." when the application starts and then the user brief section when data is loaded.
 
 ![User brief component](images/user-brief.png)
 
 ## Implement the Friends list
 
-Now let’s have a look at the second section of the Profile - the friend list. We can create a separate component `Friends` and fetch data in it, the logic is pretty similar to what we see above in the `Profile` component.
+Now let’s have a look at the second section of the Profile - the friend list. We can create a separate component `Friends` and fetch data in it; the logic is pretty similar to what we see above in the `Profile` component.
 
-```jsx
+And then in the Profile component, we can use Friends as a regular component:
+
+```tsx
 const Friends = ({ id }: { id: string }) => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | undefined>(undefined);
@@ -158,34 +160,31 @@ const Profile = ({ id }: { id: string }) => {
 };
 ```
 
-The code works fine, and it looks pretty clean and readable, `UserBrief` renders a `user` object passed in, while `Friends` manage it’s own data fetching and rendering logic all together. If we  visualise the component tree it would be something like this:
+The code works fine, and it looks pretty clean and readable, `UserBrief` renders a `user` object passed in, while `Friends` manage its own data fetching and rendering logic altogether. If we visualize the component tree, it would be something like this:
 
 ![Component structure](images/async-components-1.png)
 
-Both the `Profile` and `Friends` have logic for data fetching, loading checks and error handling. Since there are two separate data fetching calls, and if we look at the request timeline we will notice something interesting.
+Both the `Profile` and `Friends` have logic for data fetching, loading checks, and error handling. Since there are two separate data fetching calls, and if we look at the request timeline, we will notice something interesting.
 
 ![Request waterfall](images/timeline-1-2-waterfall.png)
 
-The `Friends` will not start data fetching until user state is fulfilled, which is quite a waste. Especailly when you consider that React render takes only a few milliseconds while data fetching normally takes seconds - that means most of the time of a Friends component is waiting. This is a well-known issue called Request Waterfall, and it’s quite common when building a React application with multiple data fetching.
+The `Friends` will not start data fetching until the user state is fulfilled, which is quite a waste. Especially when you consider that React render takes only a few milliseconds while data fetching normally takes seconds - that means most of the time of a Friends component is waiting. This is a well-known issue called Request Waterfall, and it’s quite common when building a React application with multiple data fetching.
 
 ## Request Waterfall
 
-Imagine when we build larger application that a component that requires data can be deeply nested in the component tree, to make the matter worse these component are developed by different teams, it’s hard to see who we’re blocking.
+Imagine when we build a larger application that a component that requires data can be deeply nested in the component tree, to make the matter worse these components are developed by different teams, it’s hard to see whom we’re blocking.
 
-![Request waterfall](images/timeline-1-2-waterfall-more-requests.png)
+![Request waterfall](images/timeline-1-3-waterfall-more-requests.png)
 
-Luckily such cases can be eliminated simply by parallise requests in the upper level in the tree. For example, we could send both requests in `Profile`, and convert `Friends` into a static component that responds only to whatever is passed in.
+Luckily such cases can be eliminated simply by parallelizing requests at the upper level in the tree. For example, we could send both requests in `Profile`, and convert `Friends` into a static component that responds only to whatever is passed in.
 
 ## Sending Parallel requests
 
-We could use the **Promise** API `promise.all` to send both requests for user’s basic information and their friends list.
+We could use the **Promise** API `Promise.all` to send both requests for the user’s basic information and their friends list.
 
 ```jsx
 const Profile = ({ id }: { id: string }) => {
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<Error | undefined>();
-  const [user, setUser] = useState<User | undefined>();
-  const [friends, setFriends] = useState<User[]>([]);
+  //...
 
   useEffect(() => {
     const fetchUserAndFriends = async () => {
@@ -207,22 +206,13 @@ const Profile = ({ id }: { id: string }) => {
     fetchUserAndFriends();
   }, [id]);
 
-  if (loading) {
-    return <div>Loading...</div>;
-  }
-
-  return (
-    <>
-      {user && <UserBrief user={user} />}
-      <Friends users={friends} />
-    </>
-  );
+  //...
 };
 ```
 
-**explain a bit the code**
+Within this `useEffect`, we simultaneously fetch user details and their friends using `Promise.all`, improving efficiency by parallelizing the network requests. Upon success, we update the respective states; on failure, we capture and set any errors encountered. This approach minimizes waiting time, ensuring both datasets are ready for rendering as soon as possible.
 
-And the component structure, if visualised, would be like the following illustration 
+And the component structure, if visualized, would be like the following illustration
 
 ![Component structure after refactoring](images/async-components-2.png)
 
@@ -230,19 +220,19 @@ And the timeline is much shorter than the previous one as we send two requests i
 
 ![Parallel requests](images/timeline-1-4-parallel.png)
 
-Note that the longest wait time depends on the slowest network request, which is much faster than the sequential ones. And if we could send as many of these independent request at the same time in an upper level of the component tree, a better user experience can be expected.
+Note that the longest wait time depends on the slowest network request, which is much faster than the sequential ones. And if we could send as many of these independent requests at the same time at an upper level of the component tree, a better user experience can be expected.
 
-There are cases while you cannot parallel requests, for example, we will make a recommendation feeds list on the `Profile` page, and this recommendation needs users’ interests. We can only send a request for fetching the recommendation when we have the response of the user brief API. 
+There are cases while you cannot parallel requests, for example, we will make a recommendation feeds list on the `Profile` page, and this recommendation needs users’ interests. We can only send a request for fetching the recommendation when we have the response of the user brief API.
 
 We cannot simply do parallel requests for such cases, but we’ll address that issue in the later section. But for now, let’s look into an enhancement of the `Friend` list component.
 
-## Delay request when it’s needed
+## Introducing UserDetailCard comopnent
 
-Let’s say we need a feature that when users hover on top of a `Friend`, we show a popup so they can see more details about that user. 
+Let’s say we need a feature that when users hover on top of a `Friend`, we show a popup so they can see more details about that user.
 
 ![Showing user detail card component when hover](images/user-brief-and-friends-user-detail.png)
 
-When the popup shows up, we need to send another service call to get the user details (like their homepage and number of connections, etc.). We will need to update  the `Friend` component to something like the following.
+When the popup shows up, we need to send another service call to get the user details (like their homepage and number of connections, etc.). We will need to update the `Friend` component to something like the following.
 
 ```jsx
 import { Popover, PopoverContent, PopoverTrigger } from "@nextui-org/react";
@@ -295,21 +285,19 @@ export function UserDetailCard({ id }: { id: string }) {
     </div>
   );
 }
-
 ```
 
-We’re using `Popover` and the supporting components from `nextui`, which provides a lot of beautiful and out-of-box components for building modern UI. The only problem here, however, is that that package itself is relatively big, also not everyone uses the feature (hover and show details), so loading that extra large package for everyone isn’t ideal - it would be better to load the `UserDetailCard` on demand - whenever it’s required.
+We’re using `Popover` and the supporting components from `nextui`, which provides a lot of beautiful and out-of-box components for building modern UI. The only problem here, however, is that the package itself is relatively big, also not everyone uses the feature (hover and show details), so loading that extra large package for everyone isn’t ideal - it would be better to load the `UserDetailCard` on demand - whenever it’s required.
 
 ![Component structure with UserDetailCard](images/async-components-3.png)
 
-We can achieve this by using code split. We can delay the big (or complicated module) into a separate file, and only load them when user has triggered some interaction - or in the later stage that not block the critical path of an application.
+We can achieve this by using code split. We can delay the big (or complicated module) into a separate file, and only load them when the user has triggered some interaction - or in the later stage that not block the critical path of an application.
 
 ## Code splitting
 
-It’s easy to achieve within React’s lazy and suspense API. So instead of static import, we use `React.lazy` to wrap the import statement, and wrap the `UserDetailCard` with a `Suspense` . When React encounters the suspense boundary, it shows a `fallback` first, and when the dynamic file is loaded it tries to render it.
+It’s easy to achieve within React’s lazy and suspense API. So instead of static import, we use `React.lazy` to wrap the import statement, and wrap the `UserDetailCard` with a `Suspense`. When React encounters the suspense boundary, it shows a `fallback` first, and when the dynamic file is loaded, it tries to render it.
 
 ```jsx
-
 import { Popover, PopoverContent, PopoverTrigger } from "@nextui-org/react";
 import { UserBrief } from "./user.tsx";
 
@@ -333,9 +321,9 @@ export const Friend = ({ user }: { user: User }) => {
 };
 ```
 
-**explain the code a bit**
+This snippet defines a `Friend` component displaying user details within a popover from Next UI, which appears upon interaction. It leverages `React.lazy` for code-splitting, loading the `UserDetailCard` component only when needed. This lazy-loading, combined with `Suspense`, enhances performance by splitting the bundle and showing a fallback during the load.
 
-If we visualise the above code, it renders in the following sequence.
+If we visualize the above code, it renders in the following sequence.
 
 ![Dynamic load component when needed](images/timeline-1-5-dynamic-load.png)
 
@@ -343,9 +331,9 @@ Note that when the user hovers and we download the JavaScript bundle, there will
 
 ## Preload data before the lazy load
 
-However, as you might have already seen the similarity here, we could request the JavaScript bundle and the network request parallelly. Meaning, when ever a `Friend` component hovered, we can trigger a network request and cache the result, so that by the time when the bundle returns we can use the data to render the component immediately.
+However, as you might have already seen the similarity here, we could request the JavaScript bundle and the network request parallely. Meaning, whenever a `Friend` component is hovered, we can trigger a network request and cache the result, so that by the time when the bundle returns, we can use the data to render the component immediately.
 
-For example, we can use `preload` from `swr` package, and then register a `onMouseEnter` event to the trigger component of `Popover`,
+For example, we can use `preload` from the `swr` package, and then register an `onMouseEnter` event to the trigger component of `Popover`,
 
 ```jsx
 import { preload } from "swr";
@@ -379,11 +367,11 @@ That way, the popup itself can have much less time to render, which brings a bet
 
 ![Dynamic load with preload in parallel](images/timeline-1-6-preload.png)
 
-So when user hovers on a `Friend`, we download the corresponding JavaScript bundle as well as download the data needed for render the user detail, and by the time `UserDetailCard` renders, it sees the existing data and renders immediately.
+So when a user hovers on a `Friend`, we download the corresponding JavaScript bundle as well as download the data needed to render the user detail, and by the time `UserDetailCard` renders, it sees the existing data and renders immediately.
 
 ![Component structure with dynamic load](images/async-components-4.png)
 
-The data fetching and loading is shifted to `Friend`, and for `UserDetailCard` it reads from the local cache maintained by `swr` .
+The data fetching and loading is shifted to `Friend`, and for `UserDetailCard`, it reads from the local cache maintained by `swr`.
 
 ```jsx
 import useSWR from "swr";
@@ -406,17 +394,19 @@ export function UserDetailCard({ id }: { id: string }) {
 }
 ```
 
-I would like to recap a bit before we move to the second half of the article. We have discussed two common issue in data fetching: parallel request and lazy loading. 
+This component uses the `useSWR` hook for data fetching, making the `UserDetailCard` dynamically load user details based on the given `id`. `useSWR` offers efficient data fetching with caching, revalidation, and automatic error handling. The component displays a loading state until the data is fetched. Once the data is available, it proceeds to render the user details.
 
-Ideally, you should level up the request to a upper level and send them parallel when you can, even though in some cases it might not feasible to do so. For example, if you’re working on a higher level component and doesn’t have knowledge about the children components (could be other teams working on them). 
+I would like to recap a bit before we move to the second half of the article. We have discussed two common issues in data fetching: parallel request and lazy loading.
 
-And for lazy load, try to split these non-critical rendering or data fetching into a separate bundle, so they can be loaded dynamically based on user interaction, e.g. a button click or hover. And you can use preload to make the JavaScript downloading and data fetching parallel.
+Ideally, you should level up the request to an upper level and send them in parallel when you can, even though in some cases it might not be feasible to do so. For example, if you’re working on a higher-level component and doesn’t have knowledge about the children components (could be other teams working on them).
 
-You might also aware that all of the techniques we discussed are based on one assumption - the backend returns data and frontend uses these data. But if we step back a bit and consider this: do we really need to divide the frontend and backend clearly, extensively? Can we in any way, allow the backend to return more data so we don’t have to fetch them in the first place?
+And for lazy load, try to split these non-critical rendering or data fetching into a separate bundle, so they can be loaded dynamically based on user interaction, e.g., a button click or hover. And you can use preload to make the JavaScript downloading and data fetching parallel.
+
+You might also be aware that all of the techniques we discussed are based on one assumption - the backend returns data and the frontend uses these data. But if we step back a bit and consider this: do we really need to divide the frontend and backend clearly, extensively? Can we in any way, allow the backend to return more data so we don’t have to fetch them in the first place?
 
 ## Server-side rendering
 
-Like most typical React applications nowadays, the application we’re building so far are purely rendered on client side. However, such application has a significant drawback on SEO, as when the search engine robot crawles our application URL, it won’t be able to get the full content but a meaningless `<div id="root"></div>` .
+Like most typical React applications nowadays, the application we’re building so far are purely rendered on client side. However, such application has a significant drawback on SEO, as when the search engine robot crawls our application URL, it won’t be able to get the full content but a meaningless `<div id="root"></div>`.
 
 ```jsx
 import React from 'react'
@@ -429,7 +419,7 @@ const html = renderToString(<App/>);
 console.log(html);
 ```
 
-You can think of the above application as a normal node script that can be executed in the backend service.
+You can think of the above application as a normal Node script that can be executed in the backend service.
 
 ```jsx
 node build/out.js
@@ -441,17 +431,17 @@ would output the following content:
 <div><div><h1>Juntao Qiu</h1><p>Developer, Educator, Author</p></div></div>
 ```
 
-You can then place such content into the `<div id="root"></div>`, and then in the frontend, React can hydrate the application with user interactions, it can save the first round render - which can be great time saving when the application is big.
+You can then place such content into the `<div id="root"></div>`, and then in the frontend, React can hydrate the application with user interactions. It can save the first round of render - which can be a great time saver when the application is big.
 
 ![Server-Side Rendering with hydrate](images/timeline-1-7-ssr-hydrate.png)
 
-In theory, the mechanism works perfectly, and both the backend and frontend are working seamlessly. However, if the output is too long the `renderToString` might not be a good option as it needs all the components to be rendered. 
+In theory, the mechanism works perfectly, and both the backend and frontend are working seamlessly. However, if the output is too long, `renderToString` might not be a good option as it needs all the components to be rendered.
 
-In addition, the traditional SSR doesn’t support data fetching, meaning the `useEffect` blocks we see above in the client side won’t work, data fetching still need to be done in the backend.
+Moreover, traditional SSR lacks support for data fetching, implying that the `useEffect` patterns used on the client side are ineffective. This necessitates handling data fetching at the backend. React Server Components offer a solution to this issue, providing a way to enhance asynchronous programming practices across React codebases.
 
-## React Server Component
+## Introducing React Server Component
 
-Introduce the React Server Component.
+React Server Components allow rendering components on the server, reducing client-side bundle size and improving performance by fetching data and executing logic server-side. They seamlessly integrate with client components for an optimized, interactive user experience.
 
 ```tsx
 async function getFriends(id: string) {
@@ -474,24 +464,29 @@ async function Friends({ id }: { id: string }) {
 }
 ```
 
+This React Server Component, `Friends`, showcases direct server-side data fetching with an `async` function to retrieve a user's friends, differentiating it from traditional client components. Unlike client components that initiate data fetching effects (`useEffect`) and manage loading states within the browser, server components fetch data during server-side rendering. The `getFriends` call executes on the server, with the resulting friends list rendered into HTML before reaching the client. This server-side execution enables a more efficient initial render without JavaScript overhead, enhancing performance and reducing bandwidth usage.
+
+And we could use the Suspense boundary with the React Server Component defined above in the following:
+
 ```tsx
 <Suspense fallback={<FriendsSkeleton />}>
   <Friends id={id} />
 </Suspense>
 ```
 
-### The new suspense API
+When `Friends` is rendered inside a `<Suspense>` boundary, React knows to wait for the `Friends` component's asynchronous data fetching to complete before rendering it. During this wait time, React displays the `<Suspense>` component's `fallback` content, in this case, `<FriendsSkeleton />`, providing a smooth user experience by showing a placeholder or loading indicator.
 
-It’s worth to mention that the declarative way of data fetching also as important as when / where you fetch the data, it can improve the code clearness significantly. Without these noise it allows you to focus on **what the component is doing - not how to do it**.
+### The new suspense model
 
-Think of the `Friends` component above in the first section, it has to maintain tree different statues and register the callback in `useEffect` and set the flag correctly at the right time, which is pretty annoy:
+Originally, Suspense was primarily used for code-splitting and lazy loading components. However, its scope has been broadened to include data fetching and other asynchronous operations, marking a significant evolution from its initial introduction.
+
+This broader use of Suspense allows developers to more effectively manage asynchronous dependencies within their components, improving the handling of loading states, error states, and the orchestration of concurrent tasks. It can significantly improve code clarity. Without these noise, it allows you to focus on **what the component is doing - not how to do it**.
+
+Think of the `Friends` component above in the first section. It has to maintain three different states and register the callback in `useEffect`, setting the flag correctly at the right time, which is pretty annoying:
 
 ```jsx
 const Friends = ({ id }: { id: string }) => {
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<Error | undefined>(undefined);
-
-  const [users, setUsers] = useState<User[]>([]);
+  //...
 
   useEffect(() => {
     const fetchFriends = async () => {
@@ -510,35 +505,45 @@ const Friends = ({ id }: { id: string }) => {
   }, [id]);
   
   // loading & error handling...
+};
+```
+
+While with the new suspense and React Server Component, the language you use is much simpler, and in the `Friends` you describe what you want to get and then render:
+
+```jsx
+async function Friends({ id }: { id: string }) {
+  const friends = await getFriends(id);
 
   return (
     <div>
       <h2>Friends</h2>
       <div>
-        {users.map((user) => (
-        // render user list
+        {friends.map((user) => (
+          <Friend user={user} key={user.id} />
         ))}
       </div>
     </div>
   );
-};
+}
 ```
 
-While with the new suspense and React Server Component, the language you use is much simpler, and in the `Friends` you describe you want to get the data, and declartively when you use the `Friends` you use Error boundary and Suspense Boundary:
+And declaratively when you use the `Friends`, you use an Error boundary and Suspense Boundary:
 
 ```jsx
-<ErrorBoundary fallback={<Error />} >
+<ErrorBoundary fallback={<Error />}>
 	<Suspense fallback={<FriendsSkeleton />}>
 	  <Friends id={id} />
 	</Suspense>
-</Error>
+</ErrorBoundary>
 ```
+
+The `ErrorBoundary` catches any rendering errors in its child components and displays the specified fallback UI, in this case, `<Error />`. Nested within it, `Suspense` manages the asynchronous loading of the `Friends` component, showing a `<FriendsSkeleton />` placeholder until the component's data dependencies are resolved. This setup ensures that the user interface remains responsive and informative during data fetching and in the event of any errors, improving the overall user experience by seamlessly integrating error handling and loading state management.
 
 ## Streaming Server-Side Rendering
 
-In React 18 forward, there are a few streaming renderings are introduced. Like what we do with I/O, we don’t have to load everything into memory, instead, we do that in smaller chunks and streaming manner. With streaming, we can render immediately what is available to the user without waiting for all the content to be ready.
+From React 18 onwards, several streaming rendering APIs have been introduced. Similar to how we handle I/O operations, we don't need to load everything into memory at once. Instead, we process the data in smaller chunks and in a streaming manner. With streaming, we can immediately render what's available to the user without waiting for all content to be ready.
 
-Also, with the new suspense boundary, we can make the server side rendering much more powerful than it was before. For example, let’s define a React Server Component as following
+Additionally, the new Suspense boundary makes server-side rendering (SSR) more powerful than before. For example, let's define a React Server Component as follows:
 
 ```jsx
 export async function Profile({ id }: { id: string }) {
@@ -562,53 +567,57 @@ export async function Profile({ id }: { id: string }) {
 }
 ```
 
-Note the way we use suspense here, it’s pretty much like the lazy load we saw above, but for data fetching. For example, when `UserBrief` is fetching it’s data, the fallback `UserBriefSkeleton` is used, and once the data fetching is done, React will replace the skeleton component with the real one.
+With streaming SSR (Server-Side Rendering), the `Profile` component leverages React's asynchronous and concurrent capabilities to enhance performance and user experience. When rendered on the server, this component initiates the streaming of HTML to the client as soon as possible, even before all data dependencies are resolved.
 
-The beautiful thing here is it happens in a streaming manner. So the Streaming SSR firstly returns the following HTML structure:
+We could break it down into a few steps:
 
-```html
-<div>
-  <h1>Profile</h1>
-  <div>
-    <div>
-      <p>loading user...</p>
-    </div>
-    <div>
-      <p>loading friends...</p>
-    </div>
-  </div>
-</div>
-```
-
-And then when the user is available:
+Initially, SSR might return the following HTML structure:
 
 ```html
 <div>
   <h1>Profile</h1>
   <div>
     <div>
-			<div><div><h1>Juntao Qiu</h1><p>Developer, Educator, Author</p></div></div>
+      <p>Loading user...</p>
     </div>
     <div>
-      <p>loading friends...</p>
+      <p>Loading friends...</p>
     </div>
   </div>
 </div>
 ```
 
-From the end user’s perspective, the application not only seems working, but actually working - you can interact with the loaded part whenever it’s ready - while the other parts is still loading.
+And then, as the user data becomes available:
+
+```html
+<div>
+  <h1>Profile</h1>
+  <div>
+    <div>
+      <div><div><h1>Juntao Qiu</h1><p>Developer, Educator, Author</p></div></div>
+    </div>
+    <div>
+      <p>Loading friends...</p>
+    </div>
+  </div>
+</div>
+```
+
+From the end user's perspective, the application not only appears to be working, but it actually is interactive—you can engage with the loaded parts as soon as they're ready, while the rest of the content continues to load.
 
 ![Streaming Server-Side Rendering](images/timeline-1-9-streaming-ssr.png)
 
-Finally, I would like to talk a bit on the Static Site Generation, which is also important as in a lot of cases when we know what data to fetch before the user make the request, that can make your web application super fast and responsive.
+Finally, I'd like to discuss Static Site Generation (SSG), which is equally important. In many cases, when we know what data to fetch before the user makes a request, we can make your web application extremely fast and responsive.
 
-## Static Site Generation?
+## Static Site Generation
 
-Website, product details, etc. Many content can be generated at build time, even the data it needs is from another remote server API. For example, advertisement content on a particular page isn’t change as often, so at build time we could generate them and serve the ads as eariler as possible on the page. 
+Static Site Generation (SSG) is a methodology in web development where web pages are pre-rendered to static HTML files during a build process before deployment. Unlike dynamic sites that generate content on the fly with each request, SSG prepares all pages in advance. This approach means that a server simply serves pre-built HTML, CSS, and JavaScript files to the browser without the need to execute server-side code or database queries at runtime.
 
-Blog, even for the dynamic ones, like the markdown is hosted on a Content Service, can be generated at build time too, that way the user can get a simultaneously experience when they land the page - because the website is technically HTML at the request time already.
+The advantages of SSG include faster load times, since static files can be quickly served from a CDN; improved security, as there is no direct database or server-side application interaction; and better SEO, due to the availability of content as soon as the page loads. 
 
-Next.js, for example, has the build-in functionality to render content as static by default, so you can generate content at build time, note that you still can access data through API or database, it just the content it generated is static.
+SSG is particularly popular for blogs, documentation sites, and marketing websites, where content does not change frequently. Next.js, for instance, has built-in functionality to render content as static by default. This means you can generate content at build time. Note that you can still access data through APIs or databases; it's just that the content it generates is static.
+
+For instance, if we want to generate some advertisements everytime when the website is built, we can define a React Server Component like the following:
 
 ```jsx
 async function getAds(): Promise<Ad[]> {
@@ -619,13 +628,13 @@ export async function Ads() {
   const ads = await getAds();
 
   return (
-    <div className="py-4">
-      <h2 className="text-lg text-slate-400 tracking-wider">Ads</h2>
-      <div className="flex flex-col py-4 gap-2">
+    <div>
+      <h2>Ads</h2>
+      <div>
         {ads.map((ad) => (
-          <div key={ad.id} className="text-sm">
-            <h3 className="text-slate-700">{ad.title}</h3>
-            <p className="text-xs text-slate-600 font-light">{ad.content}</p>
+          <div key={ad.id}>
+            <h3>{ad.title}</h3>
+            <p>{ad.content}</p>
           </div>
         ))}
       </div>
@@ -634,15 +643,28 @@ export async function Ads() {
 }
 ```
 
-And in such cases, if we could visualise the timeline you can see clearly the effort of making the full version of the page is pre-made, so there is no need to fetch data dynamically through side effect.
+The `Ads` component shows a pattern where data fetching occurs at build time rather than runtime. When the site is being built, `getAds` is called to fetch advertisements from the `/ads` endpoint. This async function retrieves an array of ads, and this data becomes immediately available as part of the component's build process. 
+
+![Static Generated Content - Ads](images/ads.png)
+
+The component then renders HTML for each advertisement, including the ad's title and content. Since the ads are fetched during the build process, the rendered page with all its advertisements is served as static HTML to the user. This means there's no need for the client's browser to run JavaScript to fetch the ads after the page loads, leading to faster page rendering and an improved user experience. 
+
+If we visualize the timeline, you can clearly see that the effort to render the full version of the page is pre-made. Thus, there's no need to fetch data dynamically through side effects.
 
 ![Static Site Generation](images/timeline-1-8-static-site-generation.png)
 
+We've covered a wide range of patterns and how they apply to various challenges. I realize there's quite a bit to take in, from code examples to diagrams. If you're looking for a more guided approach, I've put together [a comprehensive tutorial](https://www.icodeit.com.au/tutorials/advanced-network-patterns-react) on my website. It offers a more interactive exploration of these concepts, so don't hesitate to check it out for a deeper dive into the subject.
+
 ## Conclusion
 
-Data fetching is challenging, but by classify the problems into different category and apply respective techniques can help us to cope with the issue. Moving into server side and do some work there helps to build security and high performant application. 
+Data fetching is a complex task, but understanding and applying the right strategies can significantly improve our applications. In summarizing our exploration of data fetching and content rendering strategies in React applications, here are the key takeaways:
 
-We should think of make the content as static as we can, so at build time we could generate the application content, and at runtime they can be present immediately. By streaming the application while fetching data can improve the overall user experience (TTI) thanks for the React Server Component and the new Suspense API.
+- **Parallel Requests**: Whenever possible, fetch data in parallel to minimize waiting times and improve application responsiveness.
+- **Lazy Loading and Suspense**: Use lazy loading for components that are not critical to the initial rendering path, utilizing Suspense to manage loading states and code splitting, keeping your application lightweight and fast.
+- **Preloading Data**: Anticipate user interactions and preload data accordingly, ensuring a seamless and responsive user experience.
+- **New Suspense Model**: The enhanced Suspense model in React facilitates more declarative coding for asynchronous data fetching, making your code cleaner and more intuitive.
+- **Server-Side Rendering (SSR)**: SSR, particularly with React Server Components and the new Suspense, offers a powerful way to improve performance and SEO, providing content to the user faster and more efficiently.
+- **Static Site Generation (SSG)**: For content that doesn't change often, SSG is a valuable technique that complements dynamic rendering, enabling faster page loads and optimized resource usage.
+- **Streaming**: Streaming techniques can further enhance user experience by delivering content in chunks as it becomes available, although its implementation may depend on specific backend technologies like Next.js.
 
-- [ ]  [https://web.dev/articles/critical-rendering-path](https://web.dev/articles/critical-rendering-path)
-- [ ]  [https://github.com/reactwg/react-18/discussions/37](https://github.com/reactwg/react-18/discussions/37)
+By thoughtfully applying these techniques, developers can build React applications that are not only performant and scalable but also provide a delightful user experience through efficient data fetching and content rendering strategies.

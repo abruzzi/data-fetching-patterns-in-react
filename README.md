@@ -2,7 +2,16 @@
 
 Today, most applications can send hundreds of requests for a single page. For example, my Twitter home page sends around 300 requests, and an Amazon product details page sends around 600 requests. Some of them are for static assets (JavaScript, CSS, font files, icons, etc.), but there are still around 100 requests for async data fetching - either for timelines, friends, or product recommendations, as well as analytics events. That’s quite a lot.
 
-Data fetching is a critical part of any web application, not only because the nature of async programming can be tricky and not reliable 100%, but also there are too many not-obvious cases to consider under the hood. In this article, I would like to discuss a few common problems and patterns you should consider when it comes to getting data from the server side.
+The main reason a page may contain so many requests is to improve performance, specifically to make the application feel faster to users. The era of blank pages taking 5 seconds to load is long gone. In modern web applications, users typically see a basic page with style and other elements in less than a second, with additional pieces loading progressively.
+
+Take the Amazon product detail page as an example. The navigation and top bar appear almost immediately, followed by the product images, brief, and descriptions. Then, as you scroll, "Sponsored" content, ratings, recommendations, view histories, and more appear.
+
+Often, a user only wants a quick glance or to compare products (and check availability), making sections like “Customers who bought this 
+item also bought” less critical and suitable for loading via separate requests.
+
+Breaking down the content into smaller pieces and loading them in parallel is an effective strategy. However, in many scenarios, there are many other aspects to consider when it comes to apply different techniques in data fetching. Data fetching is a hard, not only because the nature of async programming doesn't fit our linear mindset, there are so many factors can cause a network call to fail, but also there are too many not-obvious cases to consider under the hood (data format, security, cache, token expire, peak time on server, etc.). 
+
+In this article, I would like to discuss a few common problems and patterns you should consider when it comes to getting data from the server side.
 
 I would like to discuss the traditional code splitting techniques, as well as parallel requests when possible by restructuring your component hierarchy, and then talk about Static Site Generation and the new Server-Side Rendering (with React Server Component), and how to use these techniques together to achieve a better user experience.
 
@@ -97,9 +106,11 @@ So React can start to render only when the JS are parsed and executed, and then 
 
 ![Fetching user data](images/timeline-1-1-one-request.png)
 
-Now in the browser, we can see a "loading..." when the application starts and then the user brief section when data is loaded.
+Now in the browser, we can see a "loading..." when the application starts and then (after a few seconds - we can simulate such case by add some delay in the API endpoints) the user brief section when data is loaded.
 
 ![User brief component](images/user-brief.png)
+
+This code structure is widely used across React codebases, especially those requiring data fetching from an API endpoint. In applications of regular size, it's common to find numerous instances of such data-fetching logic dispersed throughout various components. As your application expands, organizing these logic segments efficiently becomes a significant challenge.
 
 ## Implement the Friends list
 
@@ -170,7 +181,7 @@ Both the `Profile` and `Friends` have logic for data fetching, loading checks, a
 
 The `Friends` will not start data fetching until the user state is fulfilled, which is quite a waste. Especially when you consider that React render takes only a few milliseconds while data fetching normally takes seconds - that means most of the time of a Friends component is waiting. This is a well-known issue called Request Waterfall, and it’s quite common when building a React application with multiple data fetching.
 
-## Request Waterfall
+## Pattern 1: Request Waterfall and parallel requests
 
 Imagine when we build a larger application that a component that requires data can be deeply nested in the component tree, to make the matter worse these components are developed by different teams, it’s hard to see whom we’re blocking.
 
@@ -232,7 +243,7 @@ Let’s say we need a feature that when users hover on top of a `Friend`, we sho
 
 ![Showing user detail card component when hover](images/user-brief-and-friends-user-detail.png)
 
-When the popup shows up, we need to send another service call to get the user details (like their homepage and number of connections, etc.). We will need to update the `Friend` component to something like the following.
+When the popup shows up, we need to send another service call to get the user details (like their homepage and number of connections, etc.). We will need to update the `Friend` component ((the one we use to render each item in the Friends list) ) to something like the following.
 
 ```jsx
 import { Popover, PopoverContent, PopoverTrigger } from "@nextui-org/react";
@@ -291,9 +302,9 @@ We’re using `Popover` and the supporting components from `nextui`, which provi
 
 ![Component structure with UserDetailCard](images/async-components-3.png)
 
-We can achieve this by using code split. We can delay the big (or complicated module) into a separate file, and only load them when the user has triggered some interaction - or in the later stage that not block the critical path of an application.
+Traditionally, code splitting is the technique used to tackle this challenge. At build time, larger or more complex modules are segmented into separate files (or bundles). These segments are then loaded dynamically based on user interactions or at a stage that doesn't obstruct the application's critical path, ensuring efficient loading without delaying essential content.
 
-## Code splitting
+## Pattern 2: Code splitting and lazy load
 
 It’s easy to achieve within React’s lazy and suspense API. So instead of static import, we use `React.lazy` to wrap the import statement, and wrap the `UserDetailCard` with a `Suspense`. When React encounters the suspense boundary, it shows a `fallback` first, and when the dynamic file is loaded, it tries to render it.
 
@@ -329,9 +340,9 @@ If we visualize the above code, it renders in the following sequence.
 
 Note that when the user hovers and we download the JavaScript bundle, there will be some extra time for the browser to parse the JavaScript. Once that part of the work is done, we can get the user details by calling `/users/<id>/details` API. Eventually, we can use that data to render the content of the popup `UserDetailCard`.
 
-## Preload data before the lazy load
+## Pattern 3: Preload data
 
-However, as you might have already seen the similarity here, we could request the JavaScript bundle and the network request parallely. Meaning, whenever a `Friend` component is hovered, we can trigger a network request and cache the result, so that by the time when the bundle returns, we can use the data to render the component immediately.
+However, as you might have already seen the similarity here -  we load the JavaScript bundle first, and then when it execute it sequentially download user details, which makes some extra waiting time. We could request the JavaScript bundle and the network request parallely. Meaning, whenever a `Friend` component is hovered, we can trigger a network request and cache the result, so that by the time when the bundle returns, we can use the data to render the component immediately.
 
 For example, we can use `preload` from the `swr` package, and then register an `onMouseEnter` event to the trigger component of `Popover`,
 
@@ -404,9 +415,15 @@ And for lazy load, try to split these non-critical rendering or data fetching in
 
 You might also be aware that all of the techniques we discussed are based on one assumption - the backend returns data and the frontend uses these data. But if we step back a bit and consider this: do we really need to divide the frontend and backend clearly, extensively? Can we in any way, allow the backend to return more data so we don’t have to fetch them in the first place?
 
-## Server-side rendering
+## Shifting to Server Side
 
 Like most typical React applications nowadays, the application we’re building so far are purely rendered on client side. However, such application has a significant drawback on SEO, as when the search engine robot crawls our application URL, it won’t be able to get the full content but a meaningless `<div id="root"></div>`.
+
+SSR was invented to solve this problem. Server-side rendering (SSR) is a technique where web page content is generated on the server and sent to the client as fully formed HTML, enabling faster initial page loads and improved SEO by making content immediately available to search engines.
+
+Traditionally, in React SSR, the React components are rendered to HTML strings on the server, which are then sent to the client. This process hydrates the static markup with event handlers on the client side, turning it into a fully interactive application without needing to fetch and render the initial content on the client, enhancing performance and SEO.
+
+For example, you could use `renderToString` API to render the component tree into a HTML tree:
 
 ```jsx
 import React from 'react'
@@ -419,13 +436,7 @@ const html = renderToString(<App/>);
 console.log(html);
 ```
 
-You can think of the above application as a normal Node script that can be executed in the backend service.
-
-```jsx
-node build/out.js
-```
-
-would output the following content:
+The above application is a normal Node script that can be executed in the backend service, it prints out the application on the console.
 
 ```jsx
 <div><div><h1>Juntao Qiu</h1><p>Developer, Educator, Author</p></div></div>
@@ -476,7 +487,7 @@ And we could use the Suspense boundary with the React Server Component defined a
 
 When `Friends` is rendered inside a `<Suspense>` boundary, React knows to wait for the `Friends` component's asynchronous data fetching to complete before rendering it. During this wait time, React displays the `<Suspense>` component's `fallback` content, in this case, `<FriendsSkeleton />`, providing a smooth user experience by showing a placeholder or loading indicator.
 
-### The new suspense model
+## Pattern 4: The Declarative Data Fetching
 
 Originally, Suspense was primarily used for code-splitting and lazy loading components. However, its scope has been broadened to include data fetching and other asynchronous operations, marking a significant evolution from its initial introduction.
 
@@ -539,7 +550,7 @@ And declaratively when you use the `Friends`, you use an Error boundary and Susp
 
 The `ErrorBoundary` catches any rendering errors in its child components and displays the specified fallback UI, in this case, `<Error />`. Nested within it, `Suspense` manages the asynchronous loading of the `Friends` component, showing a `<FriendsSkeleton />` placeholder until the component's data dependencies are resolved. This setup ensures that the user interface remains responsive and informative during data fetching and in the event of any errors, improving the overall user experience by seamlessly integrating error handling and loading state management.
 
-## Streaming Server-Side Rendering
+## Pattern 5: Streaming Server-Side Rendering
 
 From React 18 onwards, several streaming rendering APIs have been introduced. Similar to how we handle I/O operations, we don't need to load everything into memory at once. Instead, we process the data in smaller chunks and in a streaming manner. With streaming, we can immediately render what's available to the user without waiting for all content to be ready.
 
@@ -607,9 +618,47 @@ From the end user's perspective, the application not only appears to be working,
 
 ![Streaming Server-Side Rendering](images/timeline-1-9-streaming-ssr.png)
 
+### Nesting Suspense overview
+
+I have mentioned in the Parallel request section that not all the requests can be paralleled, for instance, we need to fetch user data first:
+
+```jsx
+{
+  "id": "u1",
+  "name": "Juntao Qiu",
+  "bio": "Developer, Educator, Author",
+  "interests": [
+    "Technology",
+    "Outdoors",
+    "Travel"
+  ]
+}
+```
+
+Then we can invoke `/users/recommendations/<interest>` to fetch some feed recommendations for the user. That means we can create another layer - define a component called `UserInfo`, and inside it we get user brief and render it. At the same time, we use Suspense and React Server Component to define `Feeds`, which will do the data fetching itself and render when the data is ready.
+
+```jsx
+export async function UserInfo({ id }: { id: string }) {
+  const user = await getUser(id);
+ 
+  return (
+    <>
+      <UserBrief user={user} />
+      <Suspense fallback={<FeedsSkeleton />}>
+        <Feeds category={user.interests[0]} />
+      </Suspense>
+    </>
+  );
+}
+```
+
+Please note the Suspense is nested. By allowing individual components that fetch data asynchronously to be wrapped in their own **`Suspense`** components, each with bespoke fallback content, React enables a more nuanced and user-friendly loading experience. This pattern permits different parts of an application to independently manage their loading states, even when nested within a complex component hierarchy.
+
+The benefits of this approach are multifold. It leads to an improvement in user experience by ensuring that users receive immediate and meaningful feedback. The modularization of loading states simplifies code maintenance and enhances readability, as developers can focus on the loading logic of individual components rather than orchestrating state across the entire application. Moreover, this model optimizes performance by allowing React to render parts of the application as soon as their data becomes available, rather than waiting for an entire component tree to load. In essence, nested **`Suspense`** empowers developers to build more reactive, resilient, and user-centric React applications.
+
 Finally, I'd like to discuss Static Site Generation (SSG), which is equally important. In many cases, when we know what data to fetch before the user makes a request, we can make your web application extremely fast and responsive.
 
-## Static Site Generation
+## Pattern 6: Static Site Generation
 
 Static Site Generation (SSG) is a methodology in web development where web pages are pre-rendered to static HTML files during a build process before deployment. Unlike dynamic sites that generate content on the fly with each request, SSG prepares all pages in advance. This approach means that a server simply serves pre-built HTML, CSS, and JavaScript files to the browser without the need to execute server-side code or database queries at runtime.
 
@@ -662,7 +711,7 @@ Data fetching is a complex task, but understanding and applying the right strate
 - **Parallel Requests**: Whenever possible, fetch data in parallel to minimize waiting times and improve application responsiveness.
 - **Lazy Loading and Suspense**: Use lazy loading for components that are not critical to the initial rendering path, utilizing Suspense to manage loading states and code splitting, keeping your application lightweight and fast.
 - **Preloading Data**: Anticipate user interactions and preload data accordingly, ensuring a seamless and responsive user experience.
-- **New Suspense Model**: The enhanced Suspense model in React facilitates more declarative coding for asynchronous data fetching, making your code cleaner and more intuitive.
+- **Declarative Data fetchign with the New Suspense Model**: The enhanced Suspense model in React facilitates more declarative coding for asynchronous data fetching, making your code cleaner and more intuitive.
 - **Server-Side Rendering (SSR)**: SSR, particularly with React Server Components and the new Suspense, offers a powerful way to improve performance and SEO, providing content to the user faster and more efficiently.
 - **Static Site Generation (SSG)**: For content that doesn't change often, SSG is a valuable technique that complements dynamic rendering, enabling faster page loads and optimized resource usage.
 - **Streaming**: Streaming techniques can further enhance user experience by delivering content in chunks as it becomes available, although its implementation may depend on specific backend technologies like Next.js.

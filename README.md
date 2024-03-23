@@ -191,7 +191,7 @@ Imagine when we build a larger application that a component that requires data c
 
 Luckily such cases can be eliminated simply by parallelizing requests at the upper level in the tree. For example, we could send both requests in `Profile`, and convert `Friends` into a static component that responds only to whatever is passed in.
 
-## Sending Parallel requests
+### Parallel requests with Promise.all
 
 We could use the **Promise** API `Promise.all` to send both requests for the user’s basic information and their friends list.
 
@@ -494,7 +494,7 @@ While certain search engines (such as Google) have the capability to process Jav
 
 SSR was invented to solve this problem. Server-side rendering (SSR) is a technique where web page content is generated on the server and sent to the client as fully formed HTML, enabling faster initial page loads and improved SEO by making content immediately available to search engines.
 
-Traditionally, in React SSR, the React components are rendered to HTML strings on the server, which are then sent to the client. This process hydrates the static markup with event handlers on the client side, turning it into a fully interactive application without needing to fetch and render the initial content on the client, enhancing performance and SEO.
+Traditionally, in SSR, the components are rendered to HTML strings on the server, which are then sent to the client. This process hydrates the static markup with event handlers on the client side, turning it into a fully interactive application without needing to fetch and render the initial content on the client, enhancing performance and SEO.
 
 For example, you could use `renderToString` API to render the component tree into a HTML tree:
 
@@ -509,7 +509,7 @@ const html = renderToString(<App/>);
 console.log(html);
 ```
 
-The above application is a normal Node script that can be executed in the backend service, it prints out the application on the console.
+The above application is a normal Node script that can be executed in the backend server, it prints out the application on the console.
 
 ```jsx
 <div><div><h1>Juntao Qiu</h1><p>Developer, Educator, Author</p></div></div>
@@ -731,7 +731,7 @@ Please note the Suspense is nested. By allowing individual components that fetch
 
 The benefits of this approach are multifold. It leads to an improvement in user experience by ensuring that users receive immediate and meaningful feedback. The modularization of loading states simplifies code maintenance and enhances readability, as developers can focus on the loading logic of individual components rather than orchestrating state across the entire application. Moreover, this model optimizes performance by allowing React to render parts of the application as soon as their data becomes available, rather than waiting for an entire component tree to load. In essence, nested **`Suspense`** empowers developers to build more reactive, resilient, and user-centric React applications.
 
-Finally, I'd like to discuss Static Site Generation (SSG), which is equally important. In many cases, when we know what data to fetch before the user makes a request, we can make your web application extremely fast and responsive.
+Finally, I'd like to discuss Static Site Generation (SSG), which is equally important. In many cases, when we know what data to fetch before the user makes a request, we can make your web application extremely fast and responsive. Keep in mind that to build a web application, you'll typically need to combine Static Site Generation (SSG) with other data fetching patterns.
 
 ## Pattern 6: Static Site Generation
 
@@ -778,6 +778,8 @@ The component then renders HTML for each advertisement, including the ad's title
 If we visualize the timeline, you can clearly see that the effort to render the full version of the page is pre-made. Thus, there's no need to fetch data dynamically through side effects.
 
 ![Static Site Generation](images/timeline-1-8-static-site-generation-trans.png)
+
+It's important to understand that Static Site Generation (SSG) is seldom employed in isolation when constructing a web application. Invariably, you'll require certain content to be tailored to individual users or specific scenarios. Thus, SSG should be viewed as an adjunct method, rather than a solitary approach, for website development. The key lies in discerning which content can be pre-generated to improve the performance and thus user experience.
 
 We've covered a wide range of patterns and how they apply to various challenges. I realize there's quite a bit to take in, from code examples to diagrams. If you're looking for a more guided approach, I've put together [a comprehensive tutorial](https://www.icodeit.com.au/tutorials/advanced-network-patterns-react) on my website. It offers a more interactive exploration of these concepts, so don't hesitate to check it out for a deeper dive into the subject.
 

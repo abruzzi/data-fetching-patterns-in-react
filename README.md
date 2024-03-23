@@ -1,4 +1,4 @@
-# Data fetching patterns in React application
+# Data Fetching Patterns in Frontend Applications
 
 Today, most applications can send hundreds of requests for a single page. For example, my Twitter home page sends around 300 requests, and an Amazon product details page sends around 600 requests. Some of them are for static assets (JavaScript, CSS, font files, icons, etc.), but there are still around 100 requests for async data fetching - either for timelines, friends, or product recommendations, as well as analytics events. That’s quite a lot.
 
@@ -15,7 +15,9 @@ In this article, I would like to discuss a few common problems and patterns you 
 
 I would like to discuss the traditional code splitting techniques, as well as parallel requests when possible by restructuring your component hierarchy, and then talk about Static Site Generation and the new Server-Side Rendering (with React Server Component), and how to use these techniques together to achieve a better user experience.
 
-I think the best way to talk about these concepts is through a concrete example, but I also don't want to make it too tedious and complicated just to set up the context. So I’ll start with something simple and make it slightly more realistic gradually. Also, I don’t want to bore you with too many code snippets, especially for the styling part (I’m using tailwindcss for the UI, and if you have used it before, you know how long the code snippet could be in a React component. If you want to see the whole details, I have hosted them in this repo, and this one for the server side rendering)
+I believe discussing these concepts through a straightforward example is the best approach. I aim to start simply and then introduce more complexity in a manageable way. I also plan to keep code snippets, particularly for styling (I'm utilizing TailwindCSS for the UI, which can result in lengthy snippets in a React component), to a minimum. For those interested in the complete details, I've made them available in this repository, with server-side rendering details in another repository.
+
+It's important to note that the techniques we're covering are not exclusive to React or any specific frontend framework or library. I've chosen React for illustration purposes due to my extensive experience with it in recent years. However, principles like code splitting and server-side rendering are applicable across frameworks like Angular or Vue. The examples I'll share are common scenarios you might encounter in frontend development, regardless of the framework you use.
 
 Alright, let’s dive into the example we’re going to use throughout the article, a `Profile` page.
 
@@ -233,9 +235,36 @@ And the timeline is much shorter than the previous one as we send two requests i
 
 Note that the longest wait time depends on the slowest network request, which is much faster than the sequential ones. And if we could send as many of these independent requests at the same time at an upper level of the component tree, a better user experience can be expected.
 
-There are cases while you cannot parallel requests, for example, we will make a recommendation feeds list on the `Profile` page, and this recommendation needs users’ interests. We can only send a request for fetching the recommendation when we have the response of the user brief API.
+A valid concern of such structural change is that it might violate the Single Responsibility Principle: the `Profile` now knows all the data fetching details of `UserBrief` and `Friends`, which should in a way be hiden from the outside world. Imagine if we have more subcomponents added in the `Profile`, we could soon be overwhelmed by how to arrange these network requests. 
 
-We cannot simply do parallel requests for such cases, but we’ll address that issue in the later section. But for now, let’s look into an enhancement of the `Friend` list component.
+We will review this issue in the section about React Server Component pattern. However, for the time being, as the application's complexity remains low, handling two requests within a parent component is acceptable. That said, it's possible to decouple data fetching from rendering by utilizing a custom hook in React (or a Service in Angular, for instance):
+
+```tsx
+const useProfileData = (id: string) => {
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<Error | undefined>();
+  const [user, setUser] = useState<User | undefined>();
+  const [friends, setFriends] = useState<User[]>([]);
+
+  useEffect(() => {
+    // the fetching logic
+    fetchUserAndFriends();
+  }, [id]);
+
+  return {
+    loading,
+    error,
+    user,
+    friends,
+  };
+};
+```
+
+So we can think of `Friends` and `UserBrief` as presentional component that only accepts data and render DOM as result. This way we could develop these component separately (adding styles for different states, for example). These presentational components normally are easy to test and modify as we have separate the data fetching and rendering.
+
+However, there are cases while you cannot parallel requests, for example, we will make a recommendation feeds list on the `Profile` page, and this recommendation needs users’ **interests**. We can only send a request for fetching the recommendation when we have the response of the **user** API.
+
+We'll explore this matter further in the Declarative Data Fetching section. Meanwhile, let's enhance the `Friend` list component as an example to showcase the technique of code splitting and lazy loading.
 
 ## Introducing UserDetailCard comopnent
 
@@ -340,9 +369,50 @@ If we visualize the above code, it renders in the following sequence.
 
 Note that when the user hovers and we download the JavaScript bundle, there will be some extra time for the browser to parse the JavaScript. Once that part of the work is done, we can get the user details by calling `/users/<id>/details` API. Eventually, we can use that data to render the content of the popup `UserDetailCard`.
 
+<!-- maybe as an aside -->
+Again, this pattern is widely adopted in other frontend libraries as well. For example, you can use `defineAsyncComponent` in Vue to achieve the samiliar result - only load a component when you need it to render:
+
+```txt
+<template>
+  <Popover placement="bottom" show-arrow offset="10">
+  <!-- the rest of the template -->
+  </Popover>
+</template>
+
+<script>
+import { defineAsyncComponent } from 'vue';
+import Popover from 'path-to-popover-component';
+import UserBrief from './UserBrief.vue';
+
+const UserDetailCard = defineAsyncComponent(() => import('./UserDetailCard.vue'));
+
+// rendering logic
+</script>
+```
+
+The function `defineAsyncComponent` defines an async component which is lazy loaded only when it is rendered just like the `React.lazy`. You could even use the dynamic import operator in any JavaScript applications as it's now a standard language feature.
+
+The following code snippet illustrates that when the `toggle` button is clicked, it asynchronously loads `calculator.js` from the server. Upon successful loading, it executes the `calculator.add` function to perform a calculation, displaying the result on the page.
+
+```js
+const result = document.querySelector("#result");
+
+document.querySelector("#toggle").addEventListener("change", () => {
+  import("/calculator.js")
+    .then((calculator) => {
+      const addition = calculator.add(1, 5);
+      result.innerHTML = 
+        `Script calculator.js loaded successfully, function call returns ${addition}.`;
+    })
+    .catch((error) => {
+      result.innerHTML = `Error loading script calculator.js: ${error}.`;
+    });
+});
+```
+
 ## Pattern 3: Preload data
 
-However, as you might have already seen the similarity here -  we load the JavaScript bundle first, and then when it execute it sequentially download user details, which makes some extra waiting time. We could request the JavaScript bundle and the network request parallely. Meaning, whenever a `Friend` component is hovered, we can trigger a network request and cache the result, so that by the time when the bundle returns, we can use the data to render the component immediately.
+As you might have already seen the similarity here -  we load the JavaScript bundle first, and then when it execute it sequentially download user details, which makes some extra waiting time. We could request the JavaScript bundle and the network request parallely. Meaning, whenever a `Friend` component is hovered, we can trigger a network request and cache the result, so that by the time when the bundle returns, we can use the data to render the component immediately.
 
 For example, we can use `preload` from the `swr` package, and then register an `onMouseEnter` event to the trigger component of `Popover`,
 
@@ -415,9 +485,12 @@ And for lazy load, try to split these non-critical rendering or data fetching in
 
 You might also be aware that all of the techniques we discussed are based on one assumption - the backend returns data and the frontend uses these data. But if we step back a bit and consider this: do we really need to divide the frontend and backend clearly, extensively? Can we in any way, allow the backend to return more data so we don’t have to fetch them in the first place?
 
-## Shifting to Server Side
+## Shifting to the Server Side
 
-Like most typical React applications nowadays, the application we’re building so far are purely rendered on client side. However, such application has a significant drawback on SEO, as when the search engine robot crawls our application URL, it won’t be able to get the full content but a meaningless `<div id="root"></div>`.
+Like most typical React applications nowadays, the application we’re building so far are purely rendered on client side. However, such application has a significant drawback on SEO, as when the search engine robot crawls our application URL, it won’t be able to get the full content but a meaningless `<div id="root"></div>`. 
+
+<!-- maybe as an aside -->
+While certain search engines (such as Google) have the capability to process JavaScript, depending entirely on client-side JavaScript for content rendering can lead to issues, including delays in indexing or capturing incomplete content.
 
 SSR was invented to solve this problem. Server-side rendering (SSR) is a technique where web page content is generated on the server and sent to the client as fully formed HTML, enabling faster initial page loads and improved SEO by making content immediately available to search engines.
 
@@ -487,7 +560,9 @@ And we could use the Suspense boundary with the React Server Component defined a
 
 When `Friends` is rendered inside a `<Suspense>` boundary, React knows to wait for the `Friends` component's asynchronous data fetching to complete before rendering it. During this wait time, React displays the `<Suspense>` component's `fallback` content, in this case, `<FriendsSkeleton />`, providing a smooth user experience by showing a placeholder or loading indicator.
 
-## Pattern 4: The Declarative Data Fetching
+Within the ecosystems of other libraries such as Vue and Angular, there exist comparable solutions, notably Nuxt for Vue and Angular Universal for Angular. These frameworks offer built-in server-side rendering (SSR) capabilities, including data fetching, allowing the patterns discussed here to be similarly applied, albeit through their distinct approaches.
+
+## Pattern 4: Declarative Data Fetching
 
 Originally, Suspense was primarily used for code-splitting and lazy loading components. However, its scope has been broadened to include data fetching and other asynchronous operations, marking a significant evolution from its initial introduction.
 
@@ -662,11 +737,13 @@ Finally, I'd like to discuss Static Site Generation (SSG), which is equally impo
 
 Static Site Generation (SSG) is a methodology in web development where web pages are pre-rendered to static HTML files during a build process before deployment. Unlike dynamic sites that generate content on the fly with each request, SSG prepares all pages in advance. This approach means that a server simply serves pre-built HTML, CSS, and JavaScript files to the browser without the need to execute server-side code or database queries at runtime.
 
-The advantages of SSG include faster load times, since static files can be quickly served from a CDN; improved security, as there is no direct database or server-side application interaction; and better SEO, due to the availability of content as soon as the page loads. 
+Static Site Generation (SSG) offers numerous benefits, including enhanced load speeds due to the ability to serve static files swiftly from a Content Delivery Network (CDN). It also bolsters security since it eliminates direct interaction with databases or server-side applications. Additionally, SSG can significantly improve SEO outcomes because the content becomes immediately available upon page load.
 
-SSG is particularly popular for blogs, documentation sites, and marketing websites, where content does not change frequently. Next.js, for instance, has built-in functionality to render content as static by default. This means you can generate content at build time. Note that you can still access data through APIs or databases; it's just that the content it generates is static.
+It's worth noting that SSG's utility isn't confined to any specific frontend library; its application predates many of these libraries. Developers have the flexibility to implement SSG using various backend technologies, such as PHP, Ruby, or Java. However, in contexts where you and your team possess expertise in building client-side React applications, or where existing logic from such applications can be repurposed for static site generation, leveraging isomorphic React could be particularly advantageous.
 
-For instance, if we want to generate some advertisements everytime when the website is built, we can define a React Server Component like the following:
+SSG is especially favored for projects like blogs, documentation sites, and marketing websites, where the content remains static or seldom changes.
+
+For instance, if we want to generate some advertisements when the website is built (instead of everytime when user request the page), we can define a React Server Component like the following:
 
 ```jsx
 async function getAds(): Promise<Ad[]> {
@@ -692,7 +769,7 @@ export async function Ads() {
 }
 ```
 
-The `Ads` component shows a pattern where data fetching occurs at build time rather than runtime. When the site is being built, `getAds` is called to fetch advertisements from the `/ads` endpoint. This async function retrieves an array of ads, and this data becomes immediately available as part of the component's build process. 
+The `Ads` component above only fetches data at build time rather than runtime. When the site is being built, `getAds` is called to fetch advertisements data from the `/ads` endpoint. This async function retrieves an array of ads, and this data becomes immediately available as part of the component's build process. 
 
 ![Static Generated Content - Ads](images/ads.png)
 

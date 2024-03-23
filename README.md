@@ -235,7 +235,7 @@ And the timeline is much shorter than the previous one as we send two requests i
 
 Note that the longest wait time depends on the slowest network request, which is much faster than the sequential ones. And if we could send as many of these independent requests at the same time at an upper level of the component tree, a better user experience can be expected.
 
-A valid concern of such structural change is that it might violate the Single Responsibility Principle: the `Profile` now knows all the data fetching details of `UserBrief` and `Friends`, which should in a way be hiden from the outside world. Imagine if we have more subcomponents added in the `Profile`, we could soon be overwhelmed by how to arrange these network requests. 
+A valid concern of such structural change is that its potential breach of the Single Responsibility Principle: the `Profile` now knows all the data details of `UserBrief` and `Friends` (along with it's own responsibility and rendering logic), which should in a way be hiden from the outside world. Imagine if we have more subcomponents added in the `Profile`, we could soon be overwhelmed by how to arrange these network requests, which also make the loading state and error handling too complicated. 
 
 We will review this issue in the section about React Server Component pattern. However, for the time being, as the application's complexity remains low, handling two requests within a parent component is acceptable. That said, it's possible to decouple data fetching from rendering by utilizing a custom hook in React (or a Service in Angular, for instance):
 
@@ -779,7 +779,7 @@ If we visualize the timeline, you can clearly see that the effort to render the 
 
 ![Static Site Generation](images/timeline-1-8-static-site-generation-trans.png)
 
-It's important to understand that Static Site Generation (SSG) is seldom employed in isolation when constructing a web application. Invariably, you'll require certain content to be tailored to individual users or specific scenarios. Thus, SSG should be viewed as an adjunct method, rather than a solitary approach, for website development. The key lies in discerning which content can be pre-generated to improve the performance and thus user experience.
+It's important to understand that Static Site Generation (SSG) is seldom employed in isolation when constructing a web application. Invariably, you'll require certain content to be tailored to individual users or specific scenarios (for instance, pages like a `Profile` or `My Orders` cannot be pre-generated since their content depends on user interaction with the application). Thus, SSG should be viewed as an adjunct method, rather than a solitary approach, for website development. The key lies in discerning which content can be pre-generated to improve the performance and thus user experience.
 
 We've covered a wide range of patterns and how they apply to various challenges. I realize there's quite a bit to take in, from code examples to diagrams. If you're looking for a more guided approach, I've put together [a comprehensive tutorial](https://www.icodeit.com.au/tutorials/advanced-network-patterns-react) on my website. It offers a more interactive exploration of these concepts, so don't hesitate to check it out for a deeper dive into the subject.
 

@@ -106,7 +106,7 @@ If we visualize the timeline of the above code, you will see the following seque
 
 So React can start to render only when the JS are parsed and executed, and then it finds the `useEffect` for data fetching; it has to wait until the data is available for a re-render.
 
-![Fetching user data](images/timeline-1-1-one-request.png)
+![Fetching user data](images/timeline-1-1-one-request-trans.png)
 
 Now in the browser, we can see a "loading..." when the application starts and then (after a few seconds - we can simulate such case by add some delay in the API endpoints) the user brief section when data is loaded.
 
@@ -175,11 +175,11 @@ const Profile = ({ id }: { id: string }) => {
 
 The code works fine, and it looks pretty clean and readable, `UserBrief` renders a `user` object passed in, while `Friends` manage its own data fetching and rendering logic altogether. If we visualize the component tree, it would be something like this:
 
-![Component structure](images/async-components-1.png)
+![Component structure](images/async-components-1-trans.png)
 
 Both the `Profile` and `Friends` have logic for data fetching, loading checks, and error handling. Since there are two separate data fetching calls, and if we look at the request timeline, we will notice something interesting.
 
-![Request waterfall](images/timeline-1-2-waterfall.png)
+![Request waterfall](images/timeline-1-2-waterfall-trans.png)
 
 The `Friends` will not start data fetching until the user state is fulfilled, which is quite a waste. Especially when you consider that React render takes only a few milliseconds while data fetching normally takes seconds - that means most of the time of a Friends component is waiting. This is a well-known issue called Request Waterfall, and it’s quite common when building a React application with multiple data fetching.
 
@@ -187,7 +187,7 @@ The `Friends` will not start data fetching until the user state is fulfilled, wh
 
 Imagine when we build a larger application that a component that requires data can be deeply nested in the component tree, to make the matter worse these components are developed by different teams, it’s hard to see whom we’re blocking.
 
-![Request waterfall](images/timeline-1-3-waterfall-more-requests.png)
+![Request waterfall](images/timeline-1-3-waterfall-more-requests-trans.png)
 
 Luckily such cases can be eliminated simply by parallelizing requests at the upper level in the tree. For example, we could send both requests in `Profile`, and convert `Friends` into a static component that responds only to whatever is passed in.
 
@@ -227,11 +227,11 @@ Within this `useEffect`, we simultaneously fetch user details and their friends 
 
 And the component structure, if visualized, would be like the following illustration
 
-![Component structure after refactoring](images/async-components-2.png)
+![Component structure after refactoring](images/async-components-2-trans.png)
 
 And the timeline is much shorter than the previous one as we send two requests in parallel. The `Friends` component can render in a few milliseconds as when it starts to render, the data is already ready and passed in.
 
-![Parallel requests](images/timeline-1-4-parallel.png)
+![Parallel requests](images/timeline-1-4-parallel-trans.png)
 
 Note that the longest wait time depends on the slowest network request, which is much faster than the sequential ones. And if we could send as many of these independent requests at the same time at an upper level of the component tree, a better user experience can be expected.
 
@@ -329,7 +329,7 @@ export function UserDetailCard({ id }: { id: string }) {
 
 We’re using `Popover` and the supporting components from `nextui`, which provides a lot of beautiful and out-of-box components for building modern UI. The only problem here, however, is that the package itself is relatively big, also not everyone uses the feature (hover and show details), so loading that extra large package for everyone isn’t ideal - it would be better to load the `UserDetailCard` on demand - whenever it’s required.
 
-![Component structure with UserDetailCard](images/async-components-3.png)
+![Component structure with UserDetailCard](images/async-components-3-trans.png)
 
 Traditionally, code splitting is the technique used to tackle this challenge. At build time, larger or more complex modules are segmented into separate files (or bundles). These segments are then loaded dynamically based on user interactions or at a stage that doesn't obstruct the application's critical path, ensuring efficient loading without delaying essential content.
 
@@ -365,7 +365,7 @@ This snippet defines a `Friend` component displaying user details within a popov
 
 If we visualize the above code, it renders in the following sequence.
 
-![Dynamic load component when needed](images/timeline-1-5-dynamic-load.png)
+![Dynamic load component when needed](images/timeline-1-5-dynamic-load-trans.png)
 
 Note that when the user hovers and we download the JavaScript bundle, there will be some extra time for the browser to parse the JavaScript. Once that part of the work is done, we can get the user details by calling `/users/<id>/details` API. Eventually, we can use that data to render the content of the popup `UserDetailCard`.
 
@@ -446,11 +446,11 @@ export const Friend = ({ user }: { user: User }) => {
 
 That way, the popup itself can have much less time to render, which brings a better user experience.
 
-![Dynamic load with preload in parallel](images/timeline-1-6-preload.png)
+![Dynamic load with preload in parallel](images/timeline-1-6-preload-trans.png)
 
 So when a user hovers on a `Friend`, we download the corresponding JavaScript bundle as well as download the data needed to render the user detail, and by the time `UserDetailCard` renders, it sees the existing data and renders immediately.
 
-![Component structure with dynamic load](images/async-components-4.png)
+![Component structure with dynamic load](images/async-components-4-trans.png)
 
 The data fetching and loading is shifted to `Friend`, and for `UserDetailCard`, it reads from the local cache maintained by `swr`.
 
@@ -517,7 +517,7 @@ The above application is a normal Node script that can be executed in the backen
 
 You can then place such content into the `<div id="root"></div>`, and then in the frontend, React can hydrate the application with user interactions. It can save the first round of render - which can be a great time saver when the application is big.
 
-![Server-Side Rendering with hydrate](images/timeline-1-7-ssr-hydrate.png)
+![Server-Side Rendering with hydrate](images/timeline-1-7-ssr-hydrate-trans.png)
 
 In theory, the mechanism works perfectly, and both the backend and frontend are working seamlessly. However, if the output is too long, `renderToString` might not be a good option as it needs all the components to be rendered.
 
@@ -691,7 +691,7 @@ And then, as the user data becomes available:
 
 From the end user's perspective, the application not only appears to be working, but it actually is interactive—you can engage with the loaded parts as soon as they're ready, while the rest of the content continues to load.
 
-![Streaming Server-Side Rendering](images/timeline-1-9-streaming-ssr.png)
+![Streaming Server-Side Rendering](images/timeline-1-9-streaming-ssr-trans.png)
 
 ### Nesting Suspense overview
 
@@ -777,7 +777,7 @@ The component then renders HTML for each advertisement, including the ad's title
 
 If we visualize the timeline, you can clearly see that the effort to render the full version of the page is pre-made. Thus, there's no need to fetch data dynamically through side effects.
 
-![Static Site Generation](images/timeline-1-8-static-site-generation.png)
+![Static Site Generation](images/timeline-1-8-static-site-generation-trans.png)
 
 We've covered a wide range of patterns and how they apply to various challenges. I realize there's quite a bit to take in, from code examples to diagrams. If you're looking for a more guided approach, I've put together [a comprehensive tutorial](https://www.icodeit.com.au/tutorials/advanced-network-patterns-react) on my website. It offers a more interactive exploration of these concepts, so don't hesitate to check it out for a deeper dive into the subject.
 

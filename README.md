@@ -793,6 +793,14 @@ It's important to understand that Static Site Generation (SSG) is seldom employe
 
 We've covered a wide range of patterns and how they apply to various challenges. I realize there's quite a bit to take in, from code examples to diagrams. If you're looking for a more guided approach, I've put together [a comprehensive tutorial](https://www.icodeit.com.au/tutorials/advanced-network-patterns-react) on my website. It offers a more interactive exploration of these concepts, so don't hesitate to check it out for a deeper dive into the subject.
 
+## Choosing the right pattern
+
+Selecting the appropriate pattern for data fetching and rendering in web development is not one-size-fits-all; often, multiple strategies are combined to meet specific requirements. For example, Static Site Generation can be used for parts of a site that rarely change, supplemented by client-side Fetch-Then-Render for dynamic content or Server-Side Rendering for immediately needed data. Furthermore, non-essential sections can be split into separate bundles for lazy loading, possibly with data preloading triggered by user actions, such as hover or click. 
+
+Consider the Jira issue page as an example. The top navigation and sidebar are static, loading first to give users immediate context. Early on, you're presented with the issue's title, description, and key details like the Reporter and Assignee. For less immediate information, such as the History section at an issue's bottom, it loads only upon user interaction, like clicking a tab. This utilizes lazy loading and data fetching to efficiently manage resources and enhance user experience.
+
+![Using patterns together](images/multiple-patterns-trans.png)
+
 ## Conclusion
 
 Data fetching is a nuanced aspect of development, yet mastering the appropriate techniques can vastly enhance our applications. As we conclude our journey through data fetching and content rendering strategies within the context of React, it's crucial to highlight our main insights:

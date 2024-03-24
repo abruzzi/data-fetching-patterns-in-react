@@ -181,7 +181,9 @@ Both the `Profile` and `Friends` have logic for data fetching, loading checks, a
 
 ![Request waterfall](images/timeline-1-2-waterfall-trans.png)
 
-The `Friends` will not start data fetching until the user state is fulfilled, which is quite a waste. Especially when you consider that React render takes only a few milliseconds while data fetching normally takes seconds - that means most of the time of a Friends component is waiting. This is a well-known issue called Request Waterfall, and it’s quite common when building a React application with multiple data fetching.
+The `Friends` component won't initiate data fetching until the user state is set. This is referred to as the **Fetch-On-Render** approach, where the initial rendering is paused because the data isn't available, requiring React to wait for the data to be retrieved from the server side.
+
+This waiting period is somewhat inefficient, considering that while React's rendering process only takes a few milliseconds, data fetching can take significantly longer, often seconds. As a result, the `Friends` component spends most of its time idle, waiting for data. This scenario leads to a common challenge known as the Request Waterfall, a frequent occurrence in frontend applications that involve multiple data fetching operations.
 
 ## Pattern 1: Request Waterfall and parallel requests
 
@@ -235,9 +237,11 @@ And the timeline is much shorter than the previous one as we send two requests i
 
 Note that the longest wait time depends on the slowest network request, which is much faster than the sequential ones. And if we could send as many of these independent requests at the same time at an upper level of the component tree, a better user experience can be expected.
 
+This approach is also known as **Fetch-Then-Render**, suggesting that the aim is to initiate requests as early as possible during page load. Subsequently, the fetched data is utilized to drive React's rendering of the application, bypassing the need to manage data fetching amidst the rendering process. This strategy simplifies the rendering process, making the code easier to test and modify.
+
 A valid concern of such structural change is that its potential breach of the Single Responsibility Principle: the `Profile` now knows all the data details of `UserBrief` and `Friends` (along with it's own responsibility and rendering logic), which should in a way be hiden from the outside world. Imagine if we have more subcomponents added in the `Profile`, we could soon be overwhelmed by how to arrange these network requests, which also make the loading state and error handling too complicated. 
 
-We will review this issue in the section about React Server Component pattern. However, for the time being, as the application's complexity remains low, handling two requests within a parent component is acceptable. That said, it's possible to decouple data fetching from rendering by utilizing a custom hook in React (or a Service in Angular, for instance):
+We will review this issue in the section Declarative Data Fetching pattern later. However, for the time being, as the application's complexity remains low, handling two requests within a parent component is acceptable. That said, it's possible to decouple data fetching from rendering by utilizing a custom hook in React (or a Service in Angular, for instance):
 
 ```tsx
 const useProfileData = (id: string) => {
@@ -519,13 +523,17 @@ You can then place such content into the `<div id="root"></div>`, and then in th
 
 ![Server-Side Rendering with hydrate](images/timeline-1-7-ssr-hydrate-trans.png)
 
-In theory, the mechanism works perfectly, and both the backend and frontend are working seamlessly. However, if the output is too long, `renderToString` might not be a good option as it needs all the components to be rendered.
+In theory, the mechanism works perfectly, and both the backend and frontend are working seamlessly. However, if the output is too long, `renderToString` might not be a good option as it needs all the components to be rendered, and then send the whole response text to the browser.
 
-Moreover, traditional SSR lacks support for data fetching, implying that the `useEffect` patterns used on the client side are ineffective. This necessitates handling data fetching at the backend. React Server Components offer a solution to this issue, providing a way to enhance asynchronous programming practices across React codebases.
+Traditional Server-Side Rendering (SSR) does not inherently support client-side data fetching mechanisms like `useEffect`, which only operates in a browser environment. This limitation necessitates a system that enables data to be fetched on the server side. Additionally, an ideal setup would allow for the immediate sending of smaller, non-data-dependent chunks to the client, providing early content while deferring more complex, data-reliant components. For these components, a preliminary fallback could be displayed until the necessary data is retrieved and subsequently used to progressively enrich the client-side rendering with more detailed content as it becomes available.
+
+React Server Components address this challenge by enhancing asynchronous programming techniques throughout React applications. Similar mechanisms for advanced Server-Side Rendering exist in other libraries as well. However, for the purpose of our discussion on the `Profile` example, we'll continue to focus on utilizing React Server Components.
 
 ## Introducing React Server Component
 
 React Server Components allow rendering components on the server, reducing client-side bundle size and improving performance by fetching data and executing logic server-side. They seamlessly integrate with client components for an optimized, interactive user experience.
+
+We can modify our `Friends` client component into the following, note how we call API for fetching data in the `Friends` component:
 
 ```tsx
 async function getFriends(id: string) {
@@ -548,9 +556,9 @@ async function Friends({ id }: { id: string }) {
 }
 ```
 
-This React Server Component, `Friends`, showcases direct server-side data fetching with an `async` function to retrieve a user's friends, differentiating it from traditional client components. Unlike client components that initiate data fetching effects (`useEffect`) and manage loading states within the browser, server components fetch data during server-side rendering. The `getFriends` call executes on the server, with the resulting friends list rendered into HTML before reaching the client. This server-side execution enables a more efficient initial render without JavaScript overhead, enhancing performance and reducing bandwidth usage.
+This Server Component above `Friends` showcases direct server-side data fetching with an `async` function to retrieve a user's friends. Unlike traditional client components that initiate data fetching effects (`useEffect`) and manage loading states within the browser, server components fetch data during server-side rendering. The `getFriends` call executes on the server, with the resulting friends list rendered into HTML before reaching the client. 
 
-And we could use the Suspense boundary with the React Server Component defined above in the following:
+The most beautiful part about Server Components is how we can leverage Suspense API to wrap the data-fetching component, and let the component itself free from the state (loading, error handling states) managment.
 
 ```tsx
 <Suspense fallback={<FriendsSkeleton />}>
@@ -558,7 +566,9 @@ And we could use the Suspense boundary with the React Server Component defined a
 </Suspense>
 ```
 
-When `Friends` is rendered inside a `<Suspense>` boundary, React knows to wait for the `Friends` component's asynchronous data fetching to complete before rendering it. During this wait time, React displays the `<Suspense>` component's `fallback` content, in this case, `<FriendsSkeleton />`, providing a smooth user experience by showing a placeholder or loading indicator.
+When `Friends` is rendered inside a `<Suspense>` boundary, React knows to wait for the `Friends` component's asynchronous data fetching to complete before rendering it. During this wait time, React displays the `<Suspense>` component's `fallback` content, in this case, `<FriendsSkeleton />`, providing a smooth user experience by showing a placeholder or loading indicator. 
+
+Initially, the HTML for `FriendsSkeleton` is sent to the client, giving users an immediate visual cue that content is loading. As additional data becomes available, these updates are streamed to the browser, allowing for gradual rendering. This process results in a smoother and more efficient user experience. This is known as **Render-As-You-Fetch** approach, further details into this approach will be discussed in the Streaming Server-Side Rendering section.
 
 Within the ecosystems of other libraries such as Vue and Angular, there exist comparable solutions, notably Nuxt for Vue and Angular Universal for Angular. These frameworks offer built-in server-side rendering (SSR) capabilities, including data fetching, allowing the patterns discussed here to be similarly applied, albeit through their distinct approaches.
 
